@@ -1,0 +1,26 @@
+[
+    {
+        "id": "uhsf79ew8732091",
+        "type": "water",
+        "quantity": 10,
+        "priceTag": {
+            "price": 80,
+            "currency": ""
+        },
+        "info": {
+            "picURL": ""
+        }
+    },
+    {
+        "id": "shuwedasf809f",
+        "type": "energy_drinks",
+        "quantity": 20,
+        "priceTag": {
+            "price": 180,
+            "currency": ""
+        },
+        "info": {
+            "picURL": ""
+        }
+    }
+]

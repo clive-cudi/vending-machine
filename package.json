@@ -1,0 +1,14 @@
+{
+  "name": "vending-machine",
+  "version": "1.0.0",
+  "description": "vending-machine-app",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "clive-cudi",
+  "license": "ISC",
+  "dependencies": {
+    "concurrently": "^7.5.0"
+  }
+}

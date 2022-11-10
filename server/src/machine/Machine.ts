@@ -1,12 +1,13 @@
 import defaultItems from "./mock/defaultItems.json";
 import { v4 as v4ID } from "uuid";
+import { MachineConfig } from "../models/MachineConfig.model";
 // business logic for the vending machine
 /**
  * 
  */
 
 interface Machine_ {
-    init: (useBackup?: boolean) => void
+    init: ({ useBackup }: init_Props) => void
     getChange: (value: number, denominations: number[]) => {denomination: number, quantity: number}[]
     minCoins: (amount: number, denoms_: number[], size: number, s: number[]) => {MIN: number, FREQ: number[]}
     buy: (item: {id: string, quantity: number}, amount: number) => {success: boolean, message: string, change: machine_change}
@@ -31,6 +32,20 @@ interface Machine_constructor_Props {
     }
 }
 
+interface init_Props {
+    useBackup: boolean
+}
+
+interface MachineConfig_ {
+    denominations: number[]
+    currency: string
+    items: Item_type[]
+    cashRegister: {
+        amount: number
+        currency: string
+    }
+}
+
 type machine_change = {denomination: number, quantity: number}[]
 
 type Log_ = {action: "deduct" | "add", amount: number, timestamp: string}
@@ -41,15 +56,14 @@ type cashRegister = {
     log: Log_[]
 }
 
+interface backup_return_type extends MachineConfig_ {
+    success: boolean, error?: any
+}
+
 export class Machine implements Machine_ {
     // there has to be initial money to act as change
     // specify the type of coins accepted
-    // implement some sort of backup to the db incase the machine goes down - implementation logic
-    // add an option in the initializer function to use backup or not
     // assume the initial machine balance is always more than the change when the first item is bought
-    // if their is no enough change, then the buy is declined
-    // algorithm for determining the fractionated change 
-    // keep track of the frequency of a currency denomination
     defaults: {
         denoms: number[]
         currency: string
@@ -123,8 +137,49 @@ export class Machine implements Machine_ {
 
     }
 
-    init() {
-        // initialize a list of denominations that the machine works with
+    // implement some sort of backup to the db incase the machine goes down - implementation logic
+    // add an option in the initializer function to use backup or not
+    init({useBackup}: init_Props) {
+        if (useBackup === true) {
+            // get the latest document from DB
+            // if error, use the defaults
+            async function findMostRecentConfig() {
+                const doc_ = await MachineConfig.findOne(
+                    {},
+                    {
+                        sort: {"stamp": -1},
+                        projection: {"stamp": 1}
+                    }
+                );
+
+                if (!doc_) {return;}
+
+                return MachineConfig.findOne({
+                    stamp: doc_.stamp
+                })
+            }
+
+            const defaultConfig = {
+                denominations: this.denominations,
+                currency: this.currency,
+                items: this.items,
+                cashRegister: this.cashRegister
+            }
+
+            findMostRecentConfig().then((config) => {
+                this.denominations = config?.denominations ?? defaultConfig.denominations;
+                this.currency = config?.currency ?? defaultConfig.currency;
+                this.items = config?.items as Item_type[] ?? defaultConfig.items;
+                this.cashRegister = {...config?.cashRegister, log: []} as cashRegister ?? defaultConfig.cashRegister;
+                return config;
+            }).catch(() => {
+                this.denominations = defaultConfig.denominations;
+                this.currency = defaultConfig.currency;
+                this.items = defaultConfig.items;
+                this.cashRegister = defaultConfig.cashRegister;
+                return defaultConfig;
+            })
+        }
     }
 
     buy(item: {id: string, quantity: number}, amount: number): {success: boolean, message: string, change: machine_change} {
@@ -205,8 +260,12 @@ export class Machine implements Machine_ {
         this.denominations = newDenominationSet;
     }
 
+    changeCurrency(currency: string) {
+        this.currency = currency;
+    }
+
     updateCashRegister(amount: number) {
-        this.cashRegister.amount += amount;
+        this.cashRegister.amount = this.cashRegister.amount + amount;
         return this.generateLog("add", amount);
     }
 
@@ -220,6 +279,28 @@ export class Machine implements Machine_ {
         this.cashRegister.log.push(logMsg);
 
         return logMsg;
+    }
+
+    backup(): Promise<backup_return_type> {
+        console.log(this.cashRegister);
+        const backupConfig = new MachineConfig({
+            denominations: this.denominations,
+            currency: this.currency,
+            items: this.items,
+            cashRegister: {
+                amount: this.cashRegister.amount,
+                currency: this.cashRegister.currency
+            },
+            stamp: new Date().toJSON()
+        })
+
+        const bck = backupConfig.save().then((config) => {
+            return {...config, success: true};
+        }).catch((err) => {
+            return {success: false, error: err}
+        })
+
+        return bck as Promise<backup_return_type>;
     }
 
     // business logic

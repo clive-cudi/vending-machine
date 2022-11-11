@@ -248,6 +248,33 @@ export class Machine implements Machine_ {
     }
 
     changePrice(id: string, price: number) {
+        if (this.items.some((item_) => item_.id === id)) {
+            const targetItemIndex = this.items.findIndex((sample_item) => sample_item.id === id);
+
+            if (targetItemIndex > -1) {
+                let targetItem: Item_type = {
+                    ...this.items[targetItemIndex],
+                    priceTag: {
+                        price,
+                        currency: this.currency
+                    }                    
+                };
+
+                this.items[targetItemIndex] = targetItem;
+
+                return {item: this.items[targetItemIndex], success: true, message: "Successfully updated the price"};
+            } else {
+                return {
+                    success: false,
+                    message: "Item not Found"
+                }
+            }
+        } else {
+            return {
+                success: false,
+                message: "Item doesn't exist"
+            }
+        }
     }
 
     checkBalance() {

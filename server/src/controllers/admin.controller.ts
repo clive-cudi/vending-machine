@@ -220,7 +220,14 @@ const changePrice = (req: Request, res: Response, next: NextFunction) => {
     const { id, price } = req.body;
 
     if (id && price) {
-        
+        const changePriceResult = machine.changePrice(id, price);
+
+        return res.status(changePriceResult.success === true ? 200 : 500).json({...changePriceResult});
+    } else {
+        return res.status(400).json({
+            success: false,
+            message: "Please Recheck your inputs for ~ id & price ~"
+        })
     }
 }
 
@@ -235,5 +242,6 @@ export {
     checkBalance,
     setDenominations,
     addFunds,
-    withdrawFunds
+    withdrawFunds,
+    changePrice
 };

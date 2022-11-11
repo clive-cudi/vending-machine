@@ -199,7 +199,7 @@ const addFunds = (req: Request, res: Response, next: NextFunction) => {
     if (coins) {
         const amount = coins.map((coin) => coin.denomination * coin.count).reduce((cumulative, b) => cumulative + b, 0);
 
-        return res.status(200).json({log: machine.updateCashRegister(amount), message: `Successfully added ${machine.currency} ${amount} to machine`, success: true})
+        return res.status(200).json({log: machine.updateCashRegister(amount > 0 ? amount : 0), message: `Successfully added ${machine.currency} ${amount > 0 ? amount : 0} to machine`, success: true})
     } else {
         return res.status(400).json({message: "Please provide the funds to be added ~ coins: [denomination: number, count: number] ~", success: true});
     }

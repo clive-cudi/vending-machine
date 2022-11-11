@@ -3,6 +3,8 @@ import { homeCustomer, getAllItems, buy } from "../controllers/customer.controll
 
 const router = Router();
 
+// `/customer` routes
+
 router.get("/", homeCustomer);
 
 router.get('/available-products', getAllItems);

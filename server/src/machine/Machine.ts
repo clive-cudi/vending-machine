@@ -1,67 +1,15 @@
+// business logic for the vending machine
 import defaultItems from "./mock/defaultItems.json";
 import { v4 as v4ID } from "uuid";
 import { MachineConfig } from "../models/MachineConfig.model";
-// business logic for the vending machine
+import { Machine_, MachineConfig_, Machine_constructor_Props, machine_change, Item_type, Log_, backup_return_type, cashRegister, init_Props } from "./types";
+
 /**
- * 
+ * Machine class
+ * This class contains all business logic and a bit of implementation logic for the Vending machine
  */
-
-interface Machine_ {
-    init: ({ useBackup }: init_Props) => void
-    getChange: (value: number, denominations: number[]) => {denomination: number, quantity: number}[]
-    minCoins: (amount: number, denoms_: number[], size: number, s: number[]) => {MIN: number, FREQ: number[]}
-    buy: (item: {id: string, quantity: number}, amount: number) => {success: boolean, message: string, change: machine_change}
-}
-
-interface Item_type {
-    id: string
-    type: string,
-    quantity: number,
-    priceTag: {
-        price: number
-        currency: string
-    }
-}
-
-interface Machine_constructor_Props {
-    denominations: number[]
-    currency: string
-    initialItems: {
-        empty?: boolean
-        items?: Item_type[]
-    }
-}
-
-interface init_Props {
-    useBackup: boolean
-}
-
-interface MachineConfig_ {
-    denominations: number[]
-    currency: string
-    items: Item_type[]
-    cashRegister: {
-        amount: number
-        currency: string
-    }
-}
-
-type machine_change = {denomination: number, quantity: number}[]
-
-type Log_ = {action: "deduct" | "add", amount: number, timestamp: string}
-
-type cashRegister = {
-    amount: number,
-    currency: string,
-    log: Log_[]
-}
-
-interface backup_return_type extends MachineConfig_ {
-    success: boolean, error?: any
-}
-
 export class Machine implements Machine_ {
-    // there has to be initial money to act as change
+    // there has to be initial money to act as initial change provision
     // specify the type of coins accepted
     // assume the initial machine balance is always more than the change when the first item is bought
     defaults: {
@@ -74,13 +22,12 @@ export class Machine implements Machine_ {
     currency: string
     items: Item_type[]
     cashRegister: cashRegister
-    /**
-     * 
-     * @param denominations number[] containing supported denominations
-     */
+
+
     constructor({denominations, currency, initialItems}: Machine_constructor_Props) {
-        console.log("Constructor init")
+        console.log("Constructor init");
         // initialize a list of denominations that the machine works with
+        // list of default items available in the machine if no backup is used
         const default_items: Item_type[] = defaultItems ?? [
             {
                 "id": v4ID(),
@@ -107,6 +54,8 @@ export class Machine implements Machine_ {
                 }
             }
         ];
+
+        // default configuration for the machine if no backup is loaded
         this.defaults = {
             denoms: [1, 5, 10, 20, 50, 100, 200, 500, 1000],
             currency: "KES",
@@ -143,12 +92,15 @@ export class Machine implements Machine_ {
         if (useBackup === true) {
             // get the latest document from DB
             // if error, use the defaults
+            console.log(`Backup recovery init...`)
+
+            // async function for getting the most recent backup from DB
             async function findMostRecentConfig() {
                 const doc_ = await MachineConfig.findOne(
                     {},
+                    {},
                     {
-                        sort: {"stamp": -1},
-                        projection: {"stamp": 1}
+                        sort: {"createdAt": -1}
                     }
                 );
 
@@ -167,21 +119,22 @@ export class Machine implements Machine_ {
             }
 
             findMostRecentConfig().then((config) => {
-                this.denominations = config?.denominations ?? defaultConfig.denominations;
-                this.currency = config?.currency ?? defaultConfig.currency;
-                this.items = config?.items as Item_type[] ?? defaultConfig.items;
-                this.cashRegister = {...config?.cashRegister, log: []} as cashRegister ?? defaultConfig.cashRegister;
-                return config;
+                // console.log(config?.items);
+                if (config !== null) {
+                    const configItems: Item_type[] = config?.items.map((item) => ({id: item.id, type: item.type, quantity: item.quantity, priceTag: {...item.priceTag}})) as Item_type[];
+                    this.denominations = config?.denominations ?? defaultConfig.denominations;
+                    this.currency = config?.currency ?? defaultConfig.currency;
+                    this.items = configItems;
+                    this.cashRegister = {...config?.cashRegister, log: []} as cashRegister ?? defaultConfig.cashRegister;
+                    return config;
+                }
             }).catch(() => {
-                this.denominations = defaultConfig.denominations;
-                this.currency = defaultConfig.currency;
-                this.items = defaultConfig.items;
-                this.cashRegister = defaultConfig.cashRegister;
                 return defaultConfig;
             })
         }
     }
 
+    // buying an item
     buy(item: {id: string, quantity: number}, amount: number): {success: boolean, message: string, change: machine_change} {
         // first ensure the item exists and the quantity is more than or equal to the required quantity
         const itemIndex = this.items.findIndex((elm) => elm.id === item.id);
@@ -190,16 +143,19 @@ export class Machine implements Machine_ {
             const targetItem = this.items[itemIndex];
             
             if (targetItem.quantity >= item.quantity) {
+                // obtain the expected cumulative amount of the order
+                const cumulativeAmount = targetItem.priceTag.price * item.quantity;
+
                 // check the price against the required amount
-                if (amount >= targetItem.priceTag.price) {
+                if (amount >= cumulativeAmount) {
                     // update the target item stats after buy check
                     this.items[itemIndex] = {
-                        ...this.items[itemIndex],
+                        ...targetItem,
                         quantity: targetItem.quantity - item.quantity
                     };
 
                     // calculate the required change
-                    const balance = amount - targetItem.priceTag.price;
+                    const balance = amount - cumulativeAmount;
                     
 
                     // update the cash register
@@ -238,14 +194,64 @@ export class Machine implements Machine_ {
 
     // admin
     add(item: Item_type) {
-        this.items = [
-            ...this.items,
-            item
-        ]
+        // look for existence of a similar item type in the inventory
+        if (this.items.some((item_) => item_.type === item.type)) {
+            // item exists
+            // assign the existing item index to a const variable
+            const targetItemIndex = this.items.findIndex((itm) => itm.type === item.type);
+            this.items[targetItemIndex] = {
+                ...this.items[targetItemIndex],
+                quantity: this.items[targetItemIndex].quantity + item.quantity,
+                priceTag: {
+                    price: item.priceTag.price ?? this.items[targetItemIndex].priceTag.price,
+                    currency: this.currency
+                }
+            }
+
+            return this.items[targetItemIndex];
+        } else {
+            // item doesn't exist, add new field for the item in the inventory
+            this.items = [
+                ...this.items,
+                item
+            ]
+
+            return item;
+        }
+
+    }
+    
+    // remove an item from the inventory by its id
+    remove(id: string) {
+        // check if the target item exists
+        if (this.items.some((item_) => item_.id === id)) {
+            const targetItemIndex = this.items.findIndex((sample_item) => sample_item.id === id);
+            
+            if (targetItemIndex > -1) {
+                this.items.splice(targetItemIndex, 1);
+                return {
+                    success: true,
+                    message: "Item removed successfully"
+                }
+            } else {
+                return {
+                    success: false,
+                    message: "Item not Found"
+                }
+            }
+        } else {
+            return {
+                success: false,
+                message: "Item doesn't exist"
+            }
+        }
+    }
+
+    changePrice(id: string, price: number) {
     }
 
     checkBalance() {
-        return `Current Balance: ${this}`
+        return `Current Balance: ${this.cashRegister.amount}`
     }
 
     getAllItems() {
@@ -256,19 +262,44 @@ export class Machine implements Machine_ {
         return this.cashRegister.log;
     }
 
+    // mutate the default denomination set available in the machine
     changeDenominationSet(newDenominationSet: number[]) {
         this.denominations = newDenominationSet;
+        return this.denominations;
     }
 
+    // change the currency being used in the machine
     changeCurrency(currency: string) {
         this.currency = currency;
     }
 
+    // updates / adds funds to the cash register
     updateCashRegister(amount: number) {
         this.cashRegister.amount = this.cashRegister.amount + amount;
         return this.generateLog("add", amount);
     }
 
+    // withdraw funds available
+    withdraw(amount: number) {
+        // check if the amount of funds available is legible for withdrawal
+        if (this.cashRegister.amount >= amount) {
+            this.cashRegister.amount = this.cashRegister.amount - amount;
+
+            return {
+                success: true,
+                message: `Successfully withdrawn ${this.currency} ${amount}`,
+                log: this.generateLog("deduct", amount)
+            };
+        } else {
+            return {
+                success: false,
+                message: "Insufficient funds available for withdrawal",
+                log: null
+            }
+        }
+    }
+
+    // returns a log: Log_ object depending on the action done
     generateLog(action: "add" | "deduct", amount: number): Log_ {
         const logMsg = {
             action,
@@ -281,8 +312,8 @@ export class Machine implements Machine_ {
         return logMsg;
     }
 
+    // function to backup the machine configuration to the database
     backup(): Promise<backup_return_type> {
-        console.log(this.cashRegister);
         const backupConfig = new MachineConfig({
             denominations: this.denominations,
             currency: this.currency,
@@ -332,6 +363,8 @@ export class Machine implements Machine_ {
         return [...new Set(COINS_USED)].map((coin_instance) => ({denomination: coin_instance, quantity: getOccurrence<number>(COINS_USED, coin_instance)}))
     }
 
+    // returns the minimum number of coins for change depending on the denominations provided as well as the frequency of each coin denomination used
+    // this function implements the algorithm for solving the coin change problem using dynamic programming
     minCoins(amount: number, denoms_: number[], size: number, s: number[]) {
 
         let table = new Array(denoms_);

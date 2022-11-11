@@ -6,6 +6,8 @@ import mongoose from "mongoose";
 import AdminRouter from "./routes/admin";
 import CustomerRouter from "./routes/customer";
 import logger from "morgan";
+import swaggerUI from "swagger-ui-express";
+import swaggerFileOut from "./swagger_routes.json";
 
 const app = express();
 dotenv.config({path: path.resolve(__dirname, "../.env")});
@@ -32,6 +34,7 @@ app.get('/', (req: Request, res: Response) => {
 
 app.use('/api/customer', CustomerRouter);
 app.use('/api/admin', AdminRouter);
+app.use('/api/docs', swaggerUI.serve, swaggerUI.setup(swaggerFileOut));
 
 app.listen(PORT, () => {
     console.log(`Server up PORT: ${PORT}`)

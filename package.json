@@ -4,7 +4,13 @@
   "description": "vending-machine-app",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "server": "cd ../server && npm run server",
+    "client": "cd ../client && npm start",
+    "server:dev": "cd ../server && npm run server:dev",
+    "client:dev": "cd ../client && npm run dev",
+    "app": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\""
   },
   "author": "clive-cudi",
   "license": "ISC",
